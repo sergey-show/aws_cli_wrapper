@@ -1,0 +1,11 @@
+{
+    "stack": "my-first-stack",
+    "domain": "my-elk-domain",
+    "vpc": "vpc-id",
+    "subnet": "subnet-id",
+    "owner": "me",
+    "env": "prod",
+    "project": "test",
+    "s3bucket": "lambda-curator",
+    "ebs_size": "35"
+}

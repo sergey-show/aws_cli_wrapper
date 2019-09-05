@@ -1,0 +1,33 @@
+Parameters:
+  Owner:
+    Description: String tag with Owner
+    Type: String
+    Default: me
+
+  Project:
+    Description: String tag with Project
+    Type: my
+    
+  Env:
+    Description: String tag with Env
+    Type: String
+    Default: dev
+    AllowedValues: [ stg, prod, dev ]
+    
+  S3:
+    Type: String
+    Description:  Name of the bucket with secrets
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join ["-", [ !Ref S3, !Ref Project ]]
+      Tags:
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+
+Outputs:
+  BucketName:
+    Value: !Ref S3Bucket

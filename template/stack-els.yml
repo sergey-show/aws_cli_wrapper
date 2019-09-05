@@ -1,0 +1,265 @@
+Parameters:
+
+  Owner:
+    Description: String tag with Owner
+    Type: String
+    Default: me
+
+  Project:
+    Description: String tag with Project
+    Type: String
+    Default: my
+
+  Env:
+    Description: String tag with Env
+    Type: String
+    Default: dev
+    AllowedValues: [ stg, prod, dev ]
+
+  Version:
+    Description: Elasticsearch Version
+    Type: Number
+    Default: 6.3
+    AllowedValues: [ 5.1, 5.3, 5.5., 5.6, 6.0, 6.2, 6.3 ]
+
+  deleteindex:
+    Description: Setup for index cleaner on curator, value in days
+    Type: String
+    Default: "7"
+
+
+  LambdaRate:
+    Description: The rate (frequency) that determines when CloudWatch Events runs the rule that
+      triggers the Lambda function.
+    Type: String
+    Default: "rate(10 minutes)"
+    AllowedValues:
+      - "rate(10 minutes)"
+      - "rate(5 hours)"
+      - "rate(12 hours)"
+      - "rate(1 day)"
+      - "rate(1 day)"
+      - "rate(2 days)"
+
+  DomainName:
+    Description: A name for the Amazon ES domain
+    Type: String
+
+  S3:
+    Description: Bucket Name
+    Type: String
+  
+  EBSVolumeSize:
+    Description: The size of the EBS volume for each data node. The minimum and maximum size of an EBS volume depends on the EBS volume type and the instance type to which it is attached.
+    Type: Number
+    Default: 10
+  
+  NodeType:
+    Description: The node type to be provisioned for the Elasticsearch cluster
+    Type: String
+    Default: t2.small.elasticsearch
+    AllowedValues:
+      - t2.small.elasticsearch
+      - m4.large.elasticsearch
+      - m4.xlarge.elasticsearch
+      - c4.large.elasticsearch
+      - c4.xlarge.elasticsearch
+      - r4.large.elasticsearch
+      - r4.xlarge.elasticsearch
+    ConstraintDescription: must be a valid Elasticsearch node type.
+  
+  NodeCount:
+    Description: The number of nodes in the Elasticsearch cluster.
+    Type: Number
+    Default: '1'
+  
+  ExistingVPC:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC ID that includes the security groups in the ExistingSecurityGroups
+  
+  Subnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Chose your Subnet
+    ConstraintDescription: must be list of EC2 subnet ids
+
+Resources:
+ # Create security group for AWS ES
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join [ "-", [!Ref Project, "elasticsearch", !Ref Env] ]
+      GroupDescription: !Ref 'AWS::StackName'
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 0.0.0.0/0
+      VpcId: !Ref ExistingVPC
+      Tags:
+        - { Key: Name, Value: !Join [ "-", [!Ref Project, !Ref Env] ] }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+  # Create ES Domain
+  ElasticsearchDomain:
+    Type: 'AWS::Elasticsearch::Domain'
+    Properties:
+      DomainName: !Ref DomainName
+      ElasticsearchVersion: '6.3'
+      ElasticsearchClusterConfig:
+        InstanceCount: !Ref NodeCount
+        ZoneAwarenessEnabled: 'false'
+        InstanceType: !Ref NodeType
+      EBSOptions:
+        EBSEnabled: true
+        Iops: 0
+        VolumeSize: !Ref EBSVolumeSize
+        VolumeType: gp2
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: '0'
+      AccessPolicies:
+        Version: "2012-10-17"
+        Statement:
+        - 
+          Effect: "Allow"
+          Principal:
+            AWS: "*"
+          Action: "es:*"
+          Resource:
+            !Join ["", [ !Join [":", [ "arn:aws:es", !Ref "AWS::Region", !Ref "AWS::AccountId", "domain/"]], !Join ["-", [!Ref DomainName]], "/*"]]
+      AdvancedOptions:
+        rest.action.multi.allow_explicit_index: 'true'
+      VPCOptions:
+        SubnetIds:
+          - !Ref Subnet
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+      Tags:
+        - { Key: Name, Value: !Join [ "-", [!Ref Project, !Ref Env] ] }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: lambdalogtocloudwatch
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+
+  RolePolicies:
+    Type: 'AWS::IAM::Policy'
+    Description: "Allow Amazon LAMBDA Service to access other AWS services such as EC2 Networking APIs on your behalf"
+    Properties:
+      PolicyName: lambdaec2
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'ec2:*'
+            Resource: 'arn:aws:ec2:*:*:*'
+      Roles:
+        - !Ref LambdaExecutionRole
+
+  ESPolicies:
+    Type: 'AWS::IAM::Policy'
+    Description: "Allow Amazon LAMBDA Service to access ElasticSearch Serice"
+    Properties:
+      PolicyName: lambdaes
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - es:ESHttpPost
+              - es:ESHttpGet
+              - es:ESHttpPut
+              - es:ESHttpDelete
+            Resource: 'arn:aws:es:*:*:*'
+      Roles:
+        - !Ref LambdaExecutionRole
+  # Create CRON for run Lambda Function
+  LambdaSchedule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: A schedule for the Lambda function.
+      ScheduleExpression: !Ref LambdaRate
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt LambdaCurator.Arn
+          Id: LambdaSchedule
+
+  LambdaSchedulePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt LambdaCurator.Arn
+      Principal: 'events.amazonaws.com'
+      SourceArn: !GetAtt LambdaSchedule.Arn
+  # Create Lambda Function for curator ( cleaner index )
+  LambdaCurator:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: "es-cleanup.lambda_handler"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Join ["-", [ !Ref S3, !Ref Project ]]
+        S3Key: "es-cleanup.zip"
+      Runtime: "python3.6"
+      Environment: 
+        Variables:
+          es_endpoint:  !GetAtt ElasticsearchDomain.DomainEndpoint
+          index: all
+          delete_after: !Ref deleteindex
+          index_format: "%Y.%m.%d"
+ 
+  # Create share name in parameter store with url to kibana
+  ELSurl:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: "endpoint_es"
+      Type: "String"
+      Value: !GetAtt ElasticsearchDomain.DomainEndpoint
+      Description: "Kibana URL"
+
+# Report resurces endpoint and url to Kibana, and name Lambda Function
+Outputs:
+  KibanaURL:
+    Description: Kibana URL
+    Value: !Join 
+      - ''
+      - - !GetAtt 
+          - ElasticsearchDomain
+          - DomainEndpoint
+        - /_plugin/kibana/
+  ElasticsearchEndpoint:
+    Description: Elasticsearch domain endpoint
+    Value: !GetAtt 
+      - ElasticsearchDomain
+      - DomainEndpoint
+  ElasticsearchDomainARN:
+    Description: Elasticsearch domain ARN
+    Value: !GetAtt 
+      - ElasticsearchDomain
+      - DomainArn
+  LambdaFunction:
+    Description: he ARN of the curator Lambda-function
+    Value: !Ref LambdaCurator

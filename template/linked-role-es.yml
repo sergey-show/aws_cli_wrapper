@@ -1,0 +1,6 @@
+Resources:
+  ESRole:
+    Type: "AWS::IAM::ServiceLinkedRole"
+    Properties:
+      AWSServiceName: "es.amazonaws.com"
+      Description: "Allow Amazon Elasticsearch Service to access other AWS services such as EC2 Networking APIs on your behalf"
