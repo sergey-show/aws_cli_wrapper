@@ -25,7 +25,7 @@ and **aws cli** package, recomendation **pip**
             └── stack-els.yml
 
 
-> run.sh - this running script 
+> ./run.sh - this running script 
 > ./customers - this directory with customers, every folder with name customer must include file json, in this file vars
 > ./template - this directory include templates for staks aws (*in future plans creating any directory with groups stack, example ES AWS, EC2 AWS and more*)
 
@@ -34,3 +34,23 @@ temporary: before running ES stack you shoul create S3 bucket and upload es-clea
 *runing **sh ./run.sh** and input project name, before added vars in **json.file***
 
 **in future dynamic create aws cli line command with any templates and parameters**
+
+
+## How can use it
+
+Running script ./run.sh
+
+You can running this script in interactive mode or with key, if you want running interactive mode you must use ./run.sh i. For command line run use ./run.sh -v {your var directory} -p {your aws profile}
+
+```bash
+#with arguments
+./run.sh -v myenv -p test
+```
+OR
+```bash
+#interactive mode
+./run.sh i
+```
+
+Input your name profile of AWS credential, you can use this <a href="https://docs.aws.amazon.com/cli/latest/reference/configure/">link</a> for setup aws profile.
+
